@@ -1,3 +1,4 @@
+// @ts-check
 // native node modules
 import path from 'node:path';
 import util from 'node:util';
@@ -18,6 +19,7 @@ import bodyParser from 'body-parser';
 // local library imports
 import './fetch-patch.js';
 import { serverDirectory } from './server-directory.js';
+import { configManager } from './config-manager.js';
 
 import { serverEvents, EVENT_NAMES } from './server-events.js';
 import { loadPlugins } from './plugin-loader.js';
@@ -41,7 +43,8 @@ import {
 import getWebpackServeMiddleware from './middleware/webpack-serve.js';
 import basicAuthMiddleware from './middleware/basicAuth.js';
 import getWhitelistMiddleware from './middleware/whitelist.js';
-import accessLoggerMiddleware, { getAccessLogPath, migrateAccessLog } from './middleware/accessLogWriter.js';
+import accessLoggerMiddleware from './middleware/accessLogWriter.js';
+import { getAccessLogPath, migrateAccessLog } from './logger.js';
 import multerMonkeyPatch from './middleware/multerMonkeyPatch.js';
 import initRequestProxy from './request-proxy.js';
 import cacheBuster from './middleware/cacheBuster.js';
@@ -84,7 +87,7 @@ util.inspect.defaultOptions.maxStringLength = null;
 util.inspect.defaultOptions.depth = 4;
 
 /** @type {import('./command-line.js').CommandLineArguments} */
-const cliArgs = globalThis.COMMAND_LINE_ARGS;
+const cliArgs = configManager.getArgs();
 
 if (!cliArgs.enableIPv6 && !cliArgs.enableIPv4) {
     console.error('error: You can\'t disable all internet protocols: at least IPv6 or IPv4 must be enabled.');
@@ -93,7 +96,28 @@ if (!cliArgs.enableIPv6 && !cliArgs.enableIPv4) {
 
 const app = express();
 app.use(helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ['\'self\''],
+            scriptSrc: ['\'self\'', '\'unsafe-inline\'', '\'unsafe-eval\''], // Required for current frontend monolith
+            styleSrc: ['\'self\'', '\'unsafe-inline\''],
+            imgSrc: ['\'self\'', 'data:', 'blob:', '*'],
+            connectSrc: ['\'self\'', '*'], // Allow connections to external APIs
+            fontSrc: ['\'self\'', 'data:', 'https://fonts.gstatic.com'],
+            objectSrc: ['\'none\''],
+            mediaSrc: ['\'self\'', '*'],
+            frameSrc: ['\'self\'', '*'],
+            upgradeInsecureRequests: [],
+        },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true,
+    },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 app.use(compression());
 app.use(responseTime());
@@ -139,7 +163,7 @@ app.use(cookieSession({
     sameSite: 'lax',
     httpOnly: true,
     maxAge: getSessionCookieAge(),
-    secret: getCookieSecret(globalThis.DATA_ROOT),
+    secret: getCookieSecret(configManager.getDataRoot()),
 }));
 
 app.use(setUserDataMiddleware);
@@ -410,7 +434,7 @@ function setDnsResolutionOrder() {
 }
 
 // User storage module needs to be initialized before starting the server
-initUserStorage(globalThis.DATA_ROOT)
+initUserStorage(configManager.getDataRoot())
     .then(setDnsResolutionOrder)
     .then(ensurePublicDirectoriesExist)
     .then(migrateUserData)

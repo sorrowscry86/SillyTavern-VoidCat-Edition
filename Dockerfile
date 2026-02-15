@@ -2,9 +2,22 @@ FROM node:lts-alpine3.22
 
 # Arguments
 ARG APP_HOME=/home/node/app
+ARG VCE_VERSION=unknown
+ARG VCE_COMMIT_ID=unknown
+
+# OCI Labels
+LABEL org.opencontainers.image.title="SillyTavern VCE" \
+  org.opencontainers.image.description="A standardized version of SillyTavern for the VoidCat RDC ecosystem." \
+  org.opencontainers.image.vendor="VoidCat RDC" \
+  org.opencontainers.image.maintainer="VoidCat RDC" \
+  org.opencontainers.image.version="${VCE_VERSION}" \
+  org.opencontainers.image.revision="${VCE_COMMIT_ID}" \
+  org.opencontainers.image.licenses="AGPL-3.0" \
+  org.opencontainers.image.url="https://github.com/SillyTavern/SillyTavern" \
+  voidcat.rdc.identity="The Void Vessel"
 
 # Install system dependencies
-RUN apk add --no-cache gcompat tini git git-lfs
+RUN apk add --no-cache gcompat tini git git-lfs curl
 
 # Create app directory
 WORKDIR ${APP_HOME}
@@ -44,6 +57,10 @@ RUN \
 RUN git config --global --add safe.directory "*"
 
 EXPOSE 8000
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:8000/public/index.html || exit 1
 
 # Ensure proper handling of kernel signals
 ENTRYPOINT ["tini", "--", "./docker-entrypoint.sh"]

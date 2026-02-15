@@ -16,6 +16,7 @@ import { convertClaudePrompt } from '../prompt-converters.js';
 import { TEXTGEN_TYPES } from '../constants.js';
 import { setAdditionalHeaders } from '../additional-headers.js';
 import { getConfigValue, isValidUrl } from '../util.js';
+import { configManager } from '../config-manager.js';
 
 /**
  * @typedef { (req: import('express').Request, res: import('express').Response) => Promise<any> } TokenizationHandler
@@ -85,7 +86,7 @@ async function getPathToTokenizer(model, fallbackModel) {
             throw new Error('Failed to extract the file name from the URL');
         }
 
-        const CACHE_PATH = path.join(globalThis.DATA_ROOT, '_cache');
+        const CACHE_PATH = path.join(configManager.getDataRoot(), '_cache');
         if (!fs.existsSync(CACHE_PATH)) {
             fs.mkdirSync(CACHE_PATH, { recursive: true });
         }

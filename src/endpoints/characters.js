@@ -21,6 +21,7 @@ import { readWorldInfoFile } from './worldinfo.js';
 import { invalidateThumbnail } from './thumbnails.js';
 import { importRisuSprites } from './sprites.js';
 import { getUserDirectories } from '../users.js';
+import { configManager } from '../config-manager.js';
 import { getChatInfo } from './chats.js';
 import { ByafParser } from '../byaf.js';
 import { CharXParser, persistCharXAssets } from '../charx.js';
@@ -66,7 +67,7 @@ class DiskCache {
      * @returns {string}
      */
     get cachePath() {
-        return path.join(globalThis.DATA_ROOT, '_cache', DiskCache.DIRECTORY);
+        return path.join(configManager.getDataRoot(), '_cache', DiskCache.DIRECTORY);
     }
 
     /**

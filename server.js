@@ -6,8 +6,10 @@ console.log(`Node version: ${process.version}. Running in ${process.env.NODE_ENV
 
 // config.yaml will be set when parsing command line arguments
 const cliArgs = new CommandLineParser().parse(process.argv);
-globalThis.DATA_ROOT = cliArgs.dataRoot;
-globalThis.COMMAND_LINE_ARGS = cliArgs;
+// Initialize the Sovereign Configuration Singleton
+import { configManager } from './src/config-manager.js';
+configManager.initialize(cliArgs);
+
 process.chdir(serverDirectory);
 
 try {

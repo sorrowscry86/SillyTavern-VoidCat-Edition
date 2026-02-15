@@ -20,6 +20,8 @@ import { getConfigValue, color, delay, generateTimestamp, invalidateFirefoxCache
 import { readSecret, writeSecret } from './endpoints/secrets.js';
 import { getContentOfType } from './endpoints/content-manager.js';
 import { serverDirectory } from './server-directory.js';
+import { logger } from './logger.js';
+import { configManager } from './config-manager.js';
 
 export const KEY_PREFIX = 'user:';
 const AVATAR_PREFIX = 'avatar:';
@@ -131,7 +133,7 @@ export async function ensurePublicDirectoriesExist() {
  * @returns {void}
  */
 function logSecurityAlert(message) {
-    const { basicAuthMode, whitelistMode } = globalThis.COMMAND_LINE_ARGS;
+    const { basicAuthMode, whitelistMode } = configManager.getArgs();
     if (basicAuthMode || whitelistMode) return; // safe!
     console.error(color.red(message));
     if (getConfigValue('securityOverride', false, 'boolean')) {
@@ -146,7 +148,7 @@ function logSecurityAlert(message) {
  * @returns {Promise<void>}
  */
 export async function verifySecuritySettings() {
-    const { listen, basicAuthMode } = globalThis.COMMAND_LINE_ARGS;
+    const { listen, basicAuthMode } = configManager.getArgs();
 
     // Skip all security checks as listen is set to false
     if (!listen) {
@@ -193,7 +195,7 @@ export async function verifySecuritySettings() {
 
 export function cleanUploads() {
     try {
-        const uploadsPath = path.join(globalThis.DATA_ROOT, UPLOADS_DIRECTORY);
+        const uploadsPath = path.join(configManager.getDataRoot(), UPLOADS_DIRECTORY);
         if (fs.existsSync(uploadsPath)) {
             const uploads = fs.readdirSync(uploadsPath);
 
@@ -237,7 +239,7 @@ export async function migrateUserData() {
 
     console.log();
     console.log(color.magenta('Preparing to migrate user data...'));
-    console.log(`All public data will be moved to the ${globalThis.DATA_ROOT} directory.`);
+    console.log(`All public data will be moved to the ${configManager.getDataRoot()} directory.`);
     console.log('This process may take a while depending on the amount of data to move.');
     console.log(`Backups will be placed in the ${PUBLIC_DIRECTORIES.backups} directory.`);
     console.log(`The process will start in ${TIMEOUT} seconds. Press Ctrl+C to cancel.`);
@@ -644,7 +646,7 @@ export function getUserDirectories(handle) {
 
     const directories = structuredClone(USER_DIRECTORY_TEMPLATE);
     for (const key in directories) {
-        directories[key] = path.join(globalThis.DATA_ROOT, handle, USER_DIRECTORY_TEMPLATE[key]);
+        directories[key] = path.join(configManager.getDataRoot(), handle, USER_DIRECTORY_TEMPLATE[key]);
     }
     DIRECTORIES_CACHE.set(handle, directories);
     return directories;
@@ -877,11 +879,19 @@ export async function setUserDataMiddleware(request, response, next) {
 
     if (!user) {
         console.error('User not found:', handle);
+        if (request.session) {
+            logger.security(`Explicitly clearing session for missing user: ${handle}`);
+            request.session = null;
+        }
         return next();
     }
 
     if (!user.enabled) {
         console.error('User is disabled:', handle);
+        if (request.session) {
+            logger.security(`Explicitly clearing session for disabled user: ${handle}`);
+            request.session = null;
+        }
         return next();
     }
 
@@ -907,6 +917,11 @@ export async function setUserDataMiddleware(request, response, next) {
  */
 export function requireLoginMiddleware(request, response, next) {
     if (!request.user) {
+        if (request.session?.handle) {
+            logger.security(`Unauthorized access attempt by session ${request.session.handle} to ${request.originalUrl}`);
+        } else {
+            logger.security(`Unauthorized anonymous access attempt to ${request.originalUrl}`);
+        }
         return response.sendStatus(403);
     }
 
@@ -925,7 +940,7 @@ export async function loginPageMiddleware(request, response) {
     }
 
     try {
-        const { basicAuthMode } = globalThis.COMMAND_LINE_ARGS;
+        const { basicAuthMode } = configManager.getArgs();
         const autoLogin = await tryAutoLogin(request, basicAuthMode);
 
         if (autoLogin) {
@@ -998,6 +1013,7 @@ function createExtensionsRouteHandler(directoryFn) {
  */
 export function requireAdminMiddleware(request, response, next) {
     if (!request.user) {
+        logger.security(`Anonymous unauthorized access attempt to admin endpoint: ${request.originalUrl}`);
         return response.sendStatus(403);
     }
 
@@ -1005,7 +1021,7 @@ export function requireAdminMiddleware(request, response, next) {
         return next();
     }
 
-    console.warn('Unauthorized access to admin endpoint:', request.originalUrl);
+    logger.security(`Unauthorized admin access attempt by user ${request.user.profile.handle} to ${request.originalUrl}`);
     return response.sendStatus(403);
 }
 

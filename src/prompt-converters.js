@@ -193,46 +193,56 @@ export function convertClaudePrompt(messages, addAssistantPostfix, addAssistantP
  * @param {PromptNames} names Prompt names
  * @returns {{messages: object[], systemPrompt: object[]}} Prompt for Anthropic
  */
+/**
+ * Convert ChatML objects into working with Anthropic's new Messaging API.
+ * @param {object[]} messages Array of messages
+ * @param {string}   prefillString User determined prefill string
+ * @param {boolean}  useSysPrompt See if we want to use a system prompt
+ * @param {boolean}  useTools See if we want to use tools
+ * @param {PromptNames} names Prompt names
+ * @returns {{messages: object[], systemPrompt: object[]}} Prompt for Anthropic
+ */
 export function convertClaudeMessages(messages, prefillString, useSysPrompt, useTools, names) {
     let systemPrompt = [];
+    const processedMessages = [];
+
+    // 1. Extract System Prompt & Initial Processing
     if (useSysPrompt) {
-        // Collect all the system messages up until the first instance of a non-system message, and then remove them from the messages array.
-        let i;
-        for (i = 0; i < messages.length; i++) {
-            if (messages[i].role !== 'system') {
-                break;
-            }
-            // Append example names if not already done by the frontend (e.g. for group chats).
+        let i = 0;
+        for (; i < messages.length; i++) {
+            if (messages[i].role !== 'system') break;
+
+            let content = messages[i].content;
             if (names.userName && messages[i].name === 'example_user') {
-                if (!messages[i].content.startsWith(`${names.userName}: `)) {
-                    messages[i].content = `${names.userName}: ${messages[i].content}`;
+                if (!content.startsWith(`${names.userName}: `)) {
+                    content = `${names.userName}: ${content}`;
+                }
+            } else if (names.charName && messages[i].name === 'example_assistant') {
+                if (!content.startsWith(`${names.charName}: `) && !names.startsWithGroupName(content)) {
+                    content = `${names.charName}: ${content}`;
                 }
             }
-            if (names.charName && messages[i].name === 'example_assistant') {
-                if (!messages[i].content.startsWith(`${names.charName}: `) && !names.startsWithGroupName(messages[i].content)) {
-                    messages[i].content = `${names.charName}: ${messages[i].content}`;
-                }
-            }
-            systemPrompt.push({ type: 'text', text: messages[i].content });
+            systemPrompt.push({ type: 'text', text: content });
         }
+        // Slice the remaining messages to process
+        messages = messages.slice(i);
 
-        messages.splice(0, i);
-
-        // Check if the first message in the array is of type user, if not, interject with humanMsgFix or a blank message.
-        // Also prevents erroring out if the messages array is empty.
         if (messages.length === 0) {
-            messages.unshift({
-                role: 'user',
-                content: PROMPT_PLACEHOLDER,
-            });
+            messages.push({ role: 'user', content: PROMPT_PLACEHOLDER });
         }
     }
 
-    // Now replace all further messages that have the role 'system' with the role 'user'. (or all if we're not using one)
     const parse = (str) => typeof str === 'string' ? JSON.parse(str) : str;
-    messages.forEach((message) => {
-        if (message.role === 'assistant' && message.tool_calls) {
-            message.content = message.tool_calls.map((tc) => ({
+
+    // 2. Main Processing Pass (Role mapping, Content formatting, Tool handling)
+    for (const message of messages) {
+        let role = message.role;
+        let content = message.content;
+        let name = message.name;
+
+        // Handle Tool Calls (Assistant)
+        if (role === 'assistant' && message.tool_calls) {
+            content = message.tool_calls.map((tc) => ({
                 type: 'tool_use',
                 id: tc.id,
                 name: tc.function.name,
@@ -240,48 +250,44 @@ export function convertClaudeMessages(messages, prefillString, useSysPrompt, use
             }));
         }
 
-        if (message.role === 'tool') {
-            message.role = 'user';
-            message.content = [{
+        // Handle Tool Results (Tool -> User)
+        if (role === 'tool') {
+            role = 'user';
+            content = [{
                 type: 'tool_result',
                 tool_use_id: message.tool_call_id,
-                content: message.content,
+                content: content,
             }];
         }
 
-        if (message.role === 'system') {
-            if (names.userName && message.name === 'example_user') {
-                if (!message.content.startsWith(`${names.userName}: `)) {
-                    message.content = `${names.userName}: ${message.content}`;
+        // Handle System messages (that weren't extracted) -> User
+        if (role === 'system') {
+            if (names.userName && name === 'example_user') {
+                if (!content.startsWith(`${names.userName}: `)) {
+                    content = `${names.userName}: ${content}`;
+                }
+            } else if (names.charName && name === 'example_assistant') {
+                if (!content.startsWith(`${names.charName}: `) && !names.startsWithGroupName(content)) {
+                    content = `${names.charName}: ${content}`;
                 }
             }
-            if (names.charName && message.name === 'example_assistant') {
-                if (!message.content.startsWith(`${names.charName}: `) && !names.startsWithGroupName(message.content)) {
-                    message.content = `${names.charName}: ${message.content}`;
-                }
-            }
-            message.role = 'user';
-
-            // Delete name here so it doesn't get added later
-            delete message.name;
+            role = 'user';
+            name = undefined; // Clear name
         }
 
-        // Convert everything to an array of it would be easier to work with
-        if (typeof message.content === 'string') {
-            // Take care of name properties since claude messages don't support them
-            if (message.name) {
-                message.content = `${message.name}: ${message.content}`;
+        // Format Content (String -> Array, Image Handling)
+        if (typeof content === 'string') {
+            if (name) {
+                content = `${name}: ${content}`;
             }
-
-            message.content = [{ type: 'text', text: message.content }];
-        } else if (Array.isArray(message.content)) {
-            message.content = message.content.map((content) => {
-                if (content.type === 'image_url') {
-                    const imageEntry = content?.image_url;
+            content = [{ type: 'text', text: content }];
+        } else if (Array.isArray(content)) {
+            content = content.map((c) => {
+                if (c.type === 'image_url') {
+                    const imageEntry = c?.image_url;
                     const imageData = imageEntry?.url;
                     const mimeType = imageData?.split(';')?.[0].split(':')?.[1];
                     const base64Data = imageData?.split(',')?.[1];
-
                     return {
                         type: 'image',
                         source: {
@@ -291,66 +297,104 @@ export function convertClaudeMessages(messages, prefillString, useSysPrompt, use
                         },
                     };
                 }
-
-                if (content.type === 'text') {
-                    if (message.name) {
-                        content.text = `${message.name}: ${content.text}`;
+                if (c.type === 'text') {
+                    let text = c.text;
+                    if (name) {
+                        text = `${name}: ${text}`;
                     }
-
-                    // If the text is empty, replace it with a zero-width space
-                    return { type: 'text', text: content.text || '\u200b' };
+                    return { type: 'text', text: text || '\u200b' };
                 }
-
-                return content;
+                return c;
             });
         }
 
-        // Remove offending properties
-        delete message.name;
-        delete message.tool_calls;
-        delete message.tool_call_id;
-    });
-
-    // Images in assistant messages should be moved to the next user message
-    for (let i = 0; i < messages.length; i++) {
-        if (messages[i].role === 'assistant' && messages[i].content.some(c => c.type === 'image')) {
-            // Find the next user message
-            let j = i + 1;
-            while (j < messages.length && messages[j].role !== 'user') {
-                j++;
-            }
-
-            // Move the images
-            if (j >= messages.length) {
-                // If there is no user message after the assistant message, add a new one
-                messages.splice(i + 1, 0, { role: 'user', content: [] });
-            }
-
-            messages[j].content.push(...messages[i].content.filter(c => c.type === 'image'));
-            messages[i].content = messages[i].content.filter(c => c.type !== 'image');
-        }
+        processedMessages.push({ role, content });
     }
 
-    // Shouldn't be conditional anymore, messages api expects the last role to be user unless we're explicitly prefilling
+    // 3. Image Relocation & Merge Pass
+    // We iterate through processedMessages and build mergedMessages
+    const mergedMessages = [];
+
+    // Helper to push or merge
+    const pushOrMerge = (msg) => {
+        if (mergedMessages.length > 0 && mergedMessages[mergedMessages.length - 1].role === msg.role) {
+            mergedMessages[mergedMessages.length - 1].content.push(...msg.content);
+        } else {
+            // Clone to avoid reference issues if we mutate later
+            mergedMessages.push({ role: msg.role, content: [...msg.content] });
+        }
+    };
+
+    for (let i = 0; i < processedMessages.length; i++) {
+        const currentMsgs = processedMessages[i];
+
+        // Move images from Assistant to next User
+        if (currentMsgs.role === 'assistant') {
+            const images = currentMsgs.content.filter(c => c.type === 'image');
+            const nonImages = currentMsgs.content.filter(c => c.type !== 'image');
+
+            if (images.length > 0) {
+                // Find next user message to attach images to
+                let nextUserIdx = -1;
+                for (let j = i + 1; j < processedMessages.length; j++) {
+                    if (processedMessages[j].role === 'user') {
+                        nextUserIdx = j;
+                        break;
+                    }
+                }
+
+                if (nextUserIdx !== -1) {
+                    // Prepend images to the next user message
+                    processedMessages[nextUserIdx].content.unshift(...images);
+                } else {
+                    // No next user message? Create one after this.
+                    // effectively: processedMessages.splice(i + 1, 0, { role: 'user', content: images });
+                    // But since we are iterating, we can just handle it by pushing a user message next
+                    // Modification of the array we are iterating is tricky, so let's just handle it in the merge phase?
+                    // Actually, simpler: just push a separate user message with images into the merge stream *after* the assistant message.
+                    // But the loop logic above "Find the next user message" logic implies skipping intervening messages.
+                    // The original logic was: Move images to next user message, even if there are tools in between?
+                    // Original logic: "Find the next user message... while j < messages.length && messages[j].role !== 'user' j++"
+                    // So it skips non-user messages.
+
+                    // Let's replicate strict behavior safely.
+                    // We modify the *next* found user message in `processedMessages` directly, which hasn't been added to mergedMessages yet.
+                    if (nextUserIdx !== -1) {
+                        processedMessages[nextUserIdx].content.unshift(...images);
+                    } else {
+                        // Edge case: Assistant has image at end of conversation.
+                        // Original logic added a new user message.
+                        // We can't insert into processedMessages easily without breaking loop index.
+                        // But we can just push a user message to processedMessages end? No, loop finishes.
+                        // We can push it to mergedMessages after this iteration?
+                        // Let's just strip images from current and remember them.
+                    }
+                }
+                // Update current message to remove images
+                currentMsgs.content = nonImages;
+
+                // If there was no next user message, we need to create one.
+                if (nextUserIdx === -1) {
+                    // We need to inject a user message with the images.
+                    // Since we are at the end (effectively), we can just push it to processedMessages?
+                    processedMessages.push({ role: 'user', content: images });
+                    // The loop will pick it up on next iteration? Yes, because i < processedMessages.length is evaluated each time.
+                }
+            }
+        }
+
+        pushOrMerge(currentMsgs);
+    }
+
+    // Prefill
     if (prefillString) {
-        messages.push({
+        pushOrMerge({
             role: 'assistant',
-            // Dangling whitespace are not allowed for prefilling
             content: [{ type: 'text', text: prefillString.trimEnd() }],
         });
     }
 
-    // Since the messaging endpoint only supports user assistant roles in turns, we have to merge messages with the same role if they follow eachother
-    // Also handle multi-modality, holy slop.
-    let mergedMessages = [];
-    messages.forEach((message) => {
-        if (mergedMessages.length > 0 && mergedMessages[mergedMessages.length - 1].role === message.role) {
-            mergedMessages[mergedMessages.length - 1].content.push(...message.content);
-        } else {
-            mergedMessages.push(message);
-        }
-    });
-
+    // 4. Tool Cleanup (if tools disabled)
     if (!useTools) {
         mergedMessages.forEach((message) => {
             message.content.forEach((content) => {
@@ -363,7 +407,7 @@ export function convertClaudeMessages(messages, prefillString, useSysPrompt, use
                 }
                 if (content.type === 'tool_result') {
                     content.type = 'text';
-                    content.text = content.content;
+                    content.text = content.content; // text = content.content is weird but matches original
                     delete content.tool_use_id;
                     delete content.content;
                 }
@@ -1276,7 +1320,7 @@ export function calculateGoogleBudgetTokens(maxTokens, reasoningEffort, model) {
         return getGemini3ProBudget();
     }
 
-    if (/gemini-3-flash/.test(model) ) {
+    if (/gemini-3-flash/.test(model)) {
         return getGemini3FlashBudget();
     }
 

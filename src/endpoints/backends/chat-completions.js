@@ -50,16 +50,10 @@ import {
 } from '../../prompt-converters.js';
 
 import { readSecret, SECRET_KEYS } from '../secrets.js';
-import {
-    getTokenizerModel,
-    getSentencepiceTokenizer,
-    getTiktokenTokenizer,
-    sentencepieceTokenizers,
-    TEXT_COMPLETION_MODELS,
-    webTokenizers,
-    getWebTokenizer,
-} from '../tokenizers.js';
+import { getTokenizerModel, getSentencepiceTokenizer, getTiktokenTokenizer, sentencepieceTokenizers, TEXT_COMPLETION_MODELS, webTokenizers, getWebTokenizer } from '../tokenizers.js';
 import { getVertexAIAuth, getProjectIdFromServiceAccount } from '../google.js';
+import { MemoryService } from '../../memory/memory-service.js';
+import { PersonalityService } from '../../personality/personality-service.js';
 
 const API_OPENAI = 'https://api.openai.com/v1';
 const API_CLAUDE = 'https://api.anthropic.com/v1';
@@ -2019,6 +2013,52 @@ router.post('/generate', async function (request, response) {
                 postProcessingType,
                 getPromptNames(request));
         }
+
+        // --- OMNISCIENCE & SOVEREIGN PERSONALITY Integration ---
+        const charName = String(request.body.char_name || '');
+        console.log('[SOVEREIGN DEBUG] Incoming /generate request:', { charName, hasMessages: Array.isArray(request.body.messages) });
+        if (charName && getConfigValue('omniscience.enabled', true, 'boolean') && Array.isArray(request.body.messages)) {
+            console.log('[SOVEREIGN DEBUG] Triggering pipeline for:', charName);
+            try {
+                const memoryService = new MemoryService(request.user.directories, charName);
+                const personalityService = new PersonalityService(request.user.directories, charName);
+
+                const lastMessage = request.body.messages.findLast(m => m.role === 'user')?.content;
+                const state = await personalityService.load();
+                console.log('[SOVEREIGN DEBUG] Personality state loaded for:', charName);
+
+                // 1. Inject internal state into the prompt
+                const statePrompt = `### INTERNAL STATE (SOVEREIGN PERSONALITY)\nMood: ${state.mood}\nGoals: ${state.goals.join(', ')}\nCurrent Thought: ${state.current_thought}\nEmotions: ${JSON.stringify(state.emotions)}\n### END OF STATE\n\nRemain consistent with this internal state in your response.`;
+
+                let systemMsg = request.body.messages.find(m => m.role === 'system');
+                if (systemMsg) {
+                    systemMsg.content = `${statePrompt}\n\n${systemMsg.content}`;
+                } else {
+                    systemMsg = { role: 'system', content: statePrompt };
+                    request.body.messages.unshift(systemMsg);
+                }
+
+                // 2. Recall and inject memories
+                if (lastMessage && typeof lastMessage === 'string') {
+                    const recallCount = getConfigValue('omniscience.recall_count', 5, 'number');
+                    const memories = await memoryService.recall(lastMessage, recallCount);
+
+                    if (memories.length > 0) {
+                        const memoryContext = memories.map(m => `[Memory (${new Date(m.timestamp).toLocaleDateString()}): ${m.text}]`).join('\n');
+                        const memoryPrompt = `### RECALLED MEMORIES (OMNISCIENCE)\n${memoryContext}\n### END OF MEMORIES\n\nUse the above memories to maintain continuity with the user, but do not explicitly mention you are recalling them unless asked.`;
+
+                        // Prepend memory prompt to system message (which now definitely exists)
+                        systemMsg.content = `${memoryPrompt}\n\n${systemMsg.content}`;
+                    }
+
+                    // 3. Digitizing the user's current message immediately
+                    await memoryService.memorize(lastMessage, 'user');
+                }
+            } catch (error) {
+                console.error('[SOVEREIGN] Error in personality/memory pipeline:', error.message);
+            }
+        }
+        // --- END OMNISCIENCE/SOVEREIGN ---
 
         if (request.body.json_schema?.value) {
             request.body.json_schema.value = flattenSchema(request.body.json_schema.value, request.body.chat_completion_source);
