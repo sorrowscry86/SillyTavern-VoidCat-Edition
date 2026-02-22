@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { filterBySimilarity, deduplicate } from '../src/memory/memory-optimizer.js';
+import { filterBySimilarity, deduplicate, applyTimeDecay } from '../src/memory/memory-optimizer.js';
 
 describe('filterBySimilarity', () => {
     const memories = [
@@ -75,5 +75,55 @@ describe('deduplicate', () => {
         const memories = [{ text: 'memory A', timestamp: 1000, score: 0.9 }];
         const result = await deduplicate(memories, mockEmbedFn);
         expect(result).toHaveLength(1);
+    });
+});
+
+describe('applyTimeDecay', () => {
+    const now = Date.now();
+    const ONE_DAY_MS = 86400000;
+
+    test('returns memories unchanged when halfLifeDays is null', () => {
+        const memories = [
+            { text: 'old', timestamp: now - 60 * ONE_DAY_MS, score: 0.9 },
+            { text: 'new', timestamp: now - ONE_DAY_MS, score: 0.5 },
+        ];
+        const result = applyTimeDecay(memories, null, 'test query');
+        expect(result[0].text).toBe('old');
+        expect(result[1].text).toBe('new');
+    });
+
+    test('boosts recent memories over older ones with equal scores', () => {
+        const memories = [
+            { text: 'old', timestamp: now - 60 * ONE_DAY_MS, score: 0.8 },
+            { text: 'new', timestamp: now - ONE_DAY_MS, score: 0.8 },
+        ];
+        const result = applyTimeDecay(memories, 30, 'test query');
+        expect(result[0].text).toBe('new');
+    });
+
+    test('preserves original score field', () => {
+        const memories = [
+            { text: 'test', timestamp: now - 15 * ONE_DAY_MS, score: 0.7 },
+        ];
+        const result = applyTimeDecay(memories, 30, 'query');
+        expect(result[0].score).toBe(0.7);
+    });
+
+    test('skips decay for atemporal queries', () => {
+        const memories = [
+            { text: 'old', timestamp: now - 90 * ONE_DAY_MS, score: 0.9 },
+            { text: 'new', timestamp: now - ONE_DAY_MS, score: 0.5 },
+        ];
+        const result = applyTimeDecay(memories, 30, 'tell me everything about our history');
+        expect(result[0].text).toBe('old');
+    });
+
+    test('skips decay for queries containing "always"', () => {
+        const memories = [
+            { text: 'old', timestamp: now - 90 * ONE_DAY_MS, score: 0.9 },
+            { text: 'new', timestamp: now - ONE_DAY_MS, score: 0.5 },
+        ];
+        const result = applyTimeDecay(memories, 30, 'what do you always remember');
+        expect(result[0].text).toBe('old');
     });
 });

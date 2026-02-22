@@ -31,6 +31,52 @@ export function filterBySimilarity(memories, threshold) {
 }
 
 /**
+ * Keywords indicating atemporal queries where time-decay should be skipped.
+ *
+ * @type {RegExp}
+ */
+const ATEMPORAL_PATTERN = /\b(always|overall|history|everything|all\s+time|ever|never)\b/i;
+
+/**
+ * Applies time-decay weighting to re-score memories, boosting recent ones.
+ * Formula: adjustedScore = score * (0.7 + 0.3 * decayFactor)
+ * where decayFactor = 0.5 ^ (ageInDays / halfLifeDays)
+ *
+ * Skips decay for atemporal queries (containing "always", "history", etc.)
+ * Re-sorts memories by adjusted score. Original score is preserved.
+ *
+ * @param {MemoryItem[]} memories - Memories to re-weight.
+ * @param {number|null} halfLifeDays - Half-life for decay in days. Null to skip.
+ * @param {string} queryText - The query text (for atemporal detection).
+ * @returns {MemoryItem[]}
+ */
+export function applyTimeDecay(memories, halfLifeDays, queryText) {
+    if (halfLifeDays === null || halfLifeDays === undefined || memories.length === 0) {
+        return memories;
+    }
+
+    // Skip decay for atemporal queries
+    if (ATEMPORAL_PATTERN.test(queryText)) {
+        return memories;
+    }
+
+    const now = Date.now();
+    const MS_PER_DAY = 86400000;
+
+    const scored = memories.map(m => {
+        const ageInDays = (now - m.timestamp) / MS_PER_DAY;
+        const decayFactor = Math.pow(0.5, ageInDays / halfLifeDays);
+        const adjustedScore = m.score * (0.7 + 0.3 * decayFactor);
+        return { memory: m, adjustedScore };
+    });
+
+    // Sort by adjusted score descending
+    scored.sort((a, b) => b.adjustedScore - a.adjustedScore);
+
+    return scored.map(s => s.memory);
+}
+
+/**
  * Computes cosine similarity between two vectors.
  *
  * @param {number[]} a - First vector.
