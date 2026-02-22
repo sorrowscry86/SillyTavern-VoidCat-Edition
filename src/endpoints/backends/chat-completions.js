@@ -54,6 +54,8 @@ import { getTokenizerModel, getSentencepiceTokenizer, getTiktokenTokenizer, sent
 import { getVertexAIAuth, getProjectIdFromServiceAccount } from '../google.js';
 import { MemoryService } from '../../memory/memory-service.js';
 import { PersonalityService } from '../../personality/personality-service.js';
+import { MemoryMetrics } from '../../memory/memory-metrics.js';
+import { logger } from '../../logger.js';
 
 const API_OPENAI = 'https://api.openai.com/v1';
 const API_CLAUDE = 'https://api.anthropic.com/v1';
@@ -92,6 +94,7 @@ const cachingAtDepth = (() => {
 
 /**
  * Cache for cacheable (writing) OpenRouter model IDs.
+ *
  * @type {string[]}
  */
 const openRouterCacheableModels = [];
@@ -99,6 +102,7 @@ const openRouterCacheableModels = [];
 /**
  * Checks if an OpenRouter model supports prompt cache writing.
  * Uses a cache to avoid repeated API calls.
+ *
  * @param {string} modelId - The OpenRouter model ID
  * @returns {Promise<boolean>} `true` if the model supports writing cache
  */
@@ -143,6 +147,7 @@ async function isOpenRouterModelCacheable(modelId) {
 
 /**
  * Gets OpenRouter transforms based on the request.
+ *
  * @param {import('express').Request} request Express request
  * @returns {string[] | undefined} OpenRouter transforms
  */
@@ -159,6 +164,7 @@ function getOpenRouterTransforms(request) {
 
 /**
  * Gets OpenRouter plugins based on the request.
+ *
  * @param {import('express').Request} request
  * @returns {any[]} OpenRouter plugins
  */
@@ -174,6 +180,7 @@ function getOpenRouterPlugins(request) {
 
 /**
  * Hacky way to use JSON schema only if json_object format is supported.
+ *
  * @param {object} bodyParams Additional body parameters
  * @param {object[]} messages Array of messages
  * @param {object} jsonSchema JSON schema object
@@ -191,6 +198,7 @@ function setJsonObjectFormat(bodyParams, messages, jsonSchema) {
 
 /**
  * Sends a request to Claude API.
+ *
  * @param {express.Request} request Express request
  * @param {express.Response} response Express response
  */
@@ -377,6 +385,7 @@ async function sendClaudeRequest(request, response) {
 
 /**
  * Sends a request to Google AI API.
+ *
  * @param {express.Request} request Express request
  * @param {express.Response} response Express response
  */
@@ -440,6 +449,9 @@ async function sendMakerSuiteRequest(request, response) {
         seed: request.body.seed,
     };
 
+    /**
+     *
+     */
     function getGeminiBody() {
         // #region UGLY MODEL LISTS AREA
         const imageGenerationModels = [
@@ -713,6 +725,7 @@ async function sendMakerSuiteRequest(request, response) {
 
 /**
  * Sends a request to AI21 API.
+ *
  * @param {express.Request} request Express request
  * @param {express.Response} response Express response
  */
@@ -794,6 +807,7 @@ async function sendAI21Request(request, response) {
 
 /**
  * Sends a request to MistralAI API.
+ *
  * @param {express.Request} request Express request
  * @param {express.Response} response Express response
  */
@@ -884,6 +898,7 @@ async function sendMistralAIRequest(request, response) {
 
 /**
  * Sends a request to Cohere API.
+ *
  * @param {express.Request} request Express request
  * @param {express.Response} response Express response
  */
@@ -984,6 +999,7 @@ async function sendCohereRequest(request, response) {
 
 /**
  * Sends a request to DeepSeek API.
+ *
  * @param {express.Request} request Express request
  * @param {express.Response} response Express response
  */
@@ -1094,6 +1110,7 @@ async function sendDeepSeekRequest(request, response) {
 
 /**
  * Sends a request to XAI API.
+ *
  * @param {express.Request} request Express request
  * @param {express.Response} response Express response
  */
@@ -1211,6 +1228,7 @@ async function sendXaiRequest(request, response) {
 
 /**
  * Sends a request to AI/ML API.
+ *
  * @param {express.Request} request Express request
  * @param {express.Response} response Express response
  */
@@ -1316,6 +1334,7 @@ async function sendAimlapiRequest(request, response) {
 
 /**
  * Sends a request to Electron Hub.
+ *
  * @param {express.Request} request Express request
  * @param {express.Response} response Express response
  */
@@ -1429,6 +1448,7 @@ async function sendElectronHubRequest(request, response) {
 
 /**
  * Sends a request to Chutes.
+ *
  * @param {express.Request} request Express request
  * @param {express.Response} response Express response
  */
@@ -1531,6 +1551,7 @@ async function sendChutesRequest(request, response) {
 
 /**
  * Sends a chat completion request to Azure OpenAI.
+ *
  * @param {express.Request} request Express request object (contains request.body with all generate_data)
  * @param {express.Response} response Express response object
  */
@@ -1975,6 +1996,7 @@ router.post('/bias', async function (request, response) {
 
         /**
          * Gets tokenids for a given entry
+         *
          * @param {string} text Entry text
          * @param {(string) => Uint32Array} encode Function to encode text to token ids
          * @returns {Uint32Array} Array of token ids
@@ -2016,43 +2038,90 @@ router.post('/generate', async function (request, response) {
 
         // --- OMNISCIENCE & SOVEREIGN PERSONALITY Integration ---
         const charName = String(request.body.char_name || '');
-        console.log('[SOVEREIGN DEBUG] Incoming /generate request:', { charName, hasMessages: Array.isArray(request.body.messages) });
         if (charName && getConfigValue('omniscience.enabled', true, 'boolean') && Array.isArray(request.body.messages)) {
-            console.log('[SOVEREIGN DEBUG] Triggering pipeline for:', charName);
             try {
                 const memoryService = new MemoryService(request.user.directories, charName);
                 const personalityService = new PersonalityService(request.user.directories, charName);
+                const chat_id = request.body.chat_id;
 
                 const lastMessage = request.body.messages.findLast(m => m.role === 'user')?.content;
                 const state = await personalityService.load();
-                console.log('[SOVEREIGN DEBUG] Personality state loaded for:', charName);
 
-                // 1. Inject internal state into the prompt
-                const statePrompt = `### INTERNAL STATE (SOVEREIGN PERSONALITY)\nMood: ${state.mood}\nGoals: ${state.goals.join(', ')}\nCurrent Thought: ${state.current_thought}\nEmotions: ${JSON.stringify(state.emotions)}\n### END OF STATE\n\nRemain consistent with this internal state in your response.`;
-
+                // Ensure systemMsg exists for all injections
                 let systemMsg = request.body.messages.find(m => m.role === 'system');
-                if (systemMsg) {
-                    systemMsg.content = `${statePrompt}\n\n${systemMsg.content}`;
-                } else {
-                    systemMsg = { role: 'system', content: statePrompt };
+                if (!systemMsg) {
+                    systemMsg = { role: 'system', content: '' };
                     request.body.messages.unshift(systemMsg);
                 }
 
-                // 2. Recall and inject memories
+                // 1. Inject internal state into the prompt (skip if state is uninitialized)
+                if (state.mood !== 'Uninitialized') {
+                    const goalsText = state.goals.length > 0 ? state.goals.join(', ') : 'none currently';
+                    const statePrompt = `### YOUR INNER WORLD\nYou are currently feeling ${state.mood.toLowerCase()}. Your immediate priorities: ${goalsText}. What occupies your mind right now: "${state.current_thought}"\nEmotional undercurrents: ${JSON.stringify(state.emotions)}\n### END OF INNER WORLD\n\nLet this internal landscape color your words and actions naturally. Do not reference it directly.`;
+                    systemMsg.content = `${statePrompt}\n\n${systemMsg.content}`;
+
+                    // 1b. Inject emotional modifiers (if enabled)
+                    const emotionalModifier = personalityService.getEmotionalModifier(state.emotions);
+                    if (emotionalModifier) {
+                        systemMsg.content = `${emotionalModifier}\n\n${systemMsg.content}`;
+                    }
+                }
+
+                // 2. Recall and inject memories (with token budget cap + metrics)
                 if (lastMessage && typeof lastMessage === 'string') {
                     const recallCount = getConfigValue('omniscience.recall_count', 5, 'number');
-                    const memories = await memoryService.recall(lastMessage, recallCount);
+                    const maxMemoryTokens = getConfigValue('omniscience.max_memory_tokens', 500, 'number');
+                    const metricsEnabled = getConfigValue('omniscience.metrics_enabled', true, 'boolean');
+                    const metricsFile = getConfigValue('omniscience.metrics_file', 'omniscience_metrics.jsonl');
+                    const featureFlags = getConfigValue('omniscience.optimizations', {});
+
+                    // Initialize metrics if enabled
+                    const metrics = metricsEnabled
+                        ? new MemoryMetrics(charName, {
+                            dataRoot: request.user.directories.root,
+                            metricsFile,
+                            featureFlags,
+                        })
+                        : null;
+
+                    metrics?.startRecall();
+                    const memories = await memoryService.recall(lastMessage, recallCount, chat_id);
+                    metrics?.endRecall(memories);
 
                     if (memories.length > 0) {
-                        const memoryContext = memories.map(m => `[Memory (${new Date(m.timestamp).toLocaleDateString()}): ${m.text}]`).join('\n');
-                        const memoryPrompt = `### RECALLED MEMORIES (OMNISCIENCE)\n${memoryContext}\n### END OF MEMORIES\n\nUse the above memories to maintain continuity with the user, but do not explicitly mention you are recalling them unless asked.`;
+                        // Apply token budget cap — estimate tokens as chars/4, keep highest-relevance first
+                        let tokenBudget = maxMemoryTokens;
+                        let tokensUsed = 0;
+                        /** @type {string[]} */
+                        const memoryLines = [];
+                        for (const m of memories) {
+                            const line = `[Memory (${new Date(m.timestamp).toLocaleDateString()}): ${m.text}]`;
+                            const estimatedTokens = Math.ceil(line.length / 4);
+                            if (tokenBudget - estimatedTokens < 0 && memoryLines.length > 0) {
+                                logger.info(`[OMNISCIENCE] Token budget exhausted (${maxMemoryTokens}), truncated to ${memoryLines.length}/${memories.length} memories`);
+                                break;
+                            }
+                            tokenBudget -= estimatedTokens;
+                            tokensUsed += estimatedTokens;
+                            memoryLines.push(line);
+                        }
 
-                        // Prepend memory prompt to system message (which now definitely exists)
+                        metrics?.recordBudget(memoryLines.length, memories.length, tokensUsed, maxMemoryTokens);
+
+                        const memoryContext = memoryLines.join('\n');
+                        // Optimized: static instruction moved to one-line directive, reducing per-request overhead
+                        const memoryPrompt = `### RECALLED MEMORIES (OMNISCIENCE)\n${memoryContext}\n### END OF MEMORIES\nMaintain continuity using these memories without explicitly referencing them.`;
+
                         systemMsg.content = `${memoryPrompt}\n\n${systemMsg.content}`;
+                    } else {
+                        // No memories recalled — still record metrics for baseline
+                        metrics?.recordBudget(0, 0, 0, maxMemoryTokens);
                     }
 
-                    // 3. Digitizing the user's current message immediately
-                    await memoryService.memorize(lastMessage, 'user');
+                    metrics?.emit();
+
+                    // Note: user message memorization moved to post-generation block
+                    // to avoid storing the same message twice (pre-gen + post-gen).
                 }
             } catch (error) {
                 console.error('[SOVEREIGN] Error in personality/memory pipeline:', error.message);
@@ -2425,26 +2494,53 @@ router.post('/generate', async function (request, response) {
             return forwardFetchResponse(fetchResponse, response);
         }
 
-        if (fetchResponse.ok) {
-            /** @type {any} */
+        // VOID-VCE: Post-Generation Hook for Personality Evolution & Memory
+        if (fetchResponse.ok && !request.body.stream) {
             const json = await fetchResponse.json();
+
+            // Capture response text for memory/evolution
+            const aiResponseText = json.choices?.[0]?.message?.content || '';
+            const userMessageText = request.body.messages[request.body.messages.length - 1]?.content || '';
+
+            // Trigger Evolution with proper message array + apiConfig (fire-and-forget)
+            if (charName && getConfigValue('omniscience.enabled', true, 'boolean')) {
+                const personalityService = new PersonalityService(request.user.directories, charName);
+                const evolutionMessages = [
+                    { role: 'user', content: userMessageText },
+                    { role: 'assistant', content: aiResponseText },
+                ];
+                /** @type {import('../../personality/personality-service.js').ApiConfig} */
+                const evolutionApiConfig = {
+                    model: request.body.model || '',
+                    apiKey: apiKey || '',
+                    apiUrl: typeof apiUrl === 'string' ? apiUrl : '',
+                };
+                personalityService.evolve(evolutionMessages, evolutionApiConfig).catch(err =>
+                    console.error(`[PERSONALITY] Post-gen evolution error: ${err.message}`),
+                );
+
+                // Trigger Memorization with thread isolation
+                const memoryService = new MemoryService(request.user.directories, charName);
+                memoryService.memorize(userMessageText, 'user', request.body.chat_id).catch(console.error);
+                memoryService.memorize(aiResponseText, 'assistant', request.body.chat_id).catch(console.error);
+            }
+
             console.debug('Chat Completion response:', json);
             return response.send(json);
+        }
+        const responseText = await fetchResponse.text();
+        const errorData = tryParse(responseText);
+
+        const message = fetchResponse.statusText || 'Unknown error occurred';
+        const quota_error = fetchResponse.status === 429 && errorData?.error?.type === 'insufficient_quota';
+        console.error('Chat completion request error: ', message, responseText);
+
+        if (!response.headersSent) {
+            response.send({ error: { message }, quota_error: quota_error });
+        } else if (!response.writableEnded) {
+            response.write(responseText);
         } else {
-            const responseText = await fetchResponse.text();
-            const errorData = tryParse(responseText);
-
-            const message = fetchResponse.statusText || 'Unknown error occurred';
-            const quota_error = fetchResponse.status === 429 && errorData?.error?.type === 'insufficient_quota';
-            console.error('Chat completion request error: ', message, responseText);
-
-            if (!response.headersSent) {
-                response.send({ error: { message }, quota_error: quota_error });
-            } else if (!response.writableEnded) {
-                response.write(responseText);
-            } else {
-                response.end();
-            }
+            response.end();
         }
     } catch (error) {
         console.error('Generation failed', error);
