@@ -2069,11 +2069,48 @@ router.post('/generate', async function (request, response) {
 
                 // 2. Recall and inject memories (with token budget cap + metrics)
                 if (lastMessage && typeof lastMessage === 'string') {
-                    const recallCount = getConfigValue('omniscience.recall_count', 5, 'number');
-                    const maxMemoryTokens = getConfigValue('omniscience.max_memory_tokens', 500, 'number');
+                    const featureFlags = getConfigValue('omniscience.optimizations', {});
+                    let recallCount = getConfigValue('omniscience.recall_count', 5, 'number');
+                    let maxMemoryTokens = getConfigValue('omniscience.max_memory_tokens', 500, 'number');
                     const metricsEnabled = getConfigValue('omniscience.metrics_enabled', true, 'boolean');
                     const metricsFile = getConfigValue('omniscience.metrics_file', 'omniscience_metrics.jsonl');
-                    const featureFlags = getConfigValue('omniscience.optimizations', {});
+
+                    // ==========================================
+                    // Phase 2.2C: Adaptive K (Context-Aware)
+                    if (featureFlags.adaptive_k) {
+                        const maxContext = getConfigValue('omniscience.llm_max_context', 8192, 'number');
+                        const responseTokens = request.body.max_tokens || request.body.max_completion_tokens || 500;
+                        const safetyMargin = 100;
+
+                        // Estimate current messages tokens (char_count / 4 is a standard estimation)
+                        let currentPromptChars = 0;
+                        for (const msg of request.body.messages) {
+                            if (msg.content && typeof msg.content === 'string') {
+                                currentPromptChars += msg.content.length;
+                            }
+                        }
+                        const estimatedPromptTokens = Math.ceil(currentPromptChars / 4);
+
+                        let availableTokens = maxContext - estimatedPromptTokens - responseTokens - safetyMargin;
+
+                        if (availableTokens > 0) {
+                            // Maximize budget but cap to a functional limit (e.g. half context or 4000)
+                            maxMemoryTokens = Math.min(availableTokens, Math.floor(maxContext / 2));
+
+                            // Adjust recallCount to fetch enough memories to fill the budget
+                            // Assume average memory is ~75 tokens.
+                            const neededMemories = Math.ceil(maxMemoryTokens / 75);
+                            recallCount = Math.max(recallCount, neededMemories);
+
+                            // Prevent excessive DB load or massive network bottlenecks
+                            recallCount = Math.min(recallCount, 60);
+                        } else {
+                            // Context is too full for memories
+                            maxMemoryTokens = 0;
+                            recallCount = 0;
+                        }
+                    }
+                    // ==========================================
 
                     // Initialize metrics if enabled
                     const metrics = metricsEnabled
