@@ -8,6 +8,11 @@ import { logger } from '../logger.js';
  * @property {string} characterName - Character this recall was for.
  * @property {number} latencyMs - Wall-clock time for recall() in milliseconds.
  * @property {number} memoriesRetrieved - Count returned from vector search.
+ * @property {number} memoriesAfterFiltering - Count after similarity threshold.
+ * @property {number} memoriesDeduped - Count removed by dedup.
+ * @property {boolean} timeDecayApplied - Whether time-decay was applied.
+ * @property {number} memoriesCompressed - Count of memories shortened.
+ * @property {number|null} compressionRatio - Mean compressed/original length.
  * @property {number} memoriesAfterBudget - Count after token budget truncation.
  * @property {number|null} similarityMin - Lowest similarity score in results.
  * @property {number|null} similarityMax - Highest similarity score in results.
@@ -50,6 +55,16 @@ export class MemoryMetrics {
         this.tokenBudgetMax = 0;
         /** @type {boolean} */
         this.tokenBudgetExhausted = false;
+        /** @type {number} */
+        this.memoriesAfterFiltering = 0;
+        /** @type {number} */
+        this.memoriesDeduped = 0;
+        /** @type {boolean} */
+        this.timeDecayApplied = false;
+        /** @type {number} */
+        this.memoriesCompressed = 0;
+        /** @type {number|null} */
+        this.compressionRatio = null;
     }
 
     /**
@@ -81,6 +96,20 @@ export class MemoryMetrics {
      * @param {number} tokenBudgetMax - Maximum token budget from config.
      * @returns {void}
      */
+    /**
+     * Record optimization pipeline results.
+     *
+     * @param {import('./memory-optimizer.js').OptimizationStats} stats - Stats from optimizeMemories().
+     * @returns {void}
+     */
+    recordOptimizations(stats) {
+        this.memoriesAfterFiltering = stats.memoriesAfterFiltering;
+        this.memoriesDeduped = stats.memoriesDeduped;
+        this.timeDecayApplied = stats.timeDecayApplied;
+        this.memoriesCompressed = stats.memoriesCompressed;
+        this.compressionRatio = stats.compressionRatio;
+    }
+
     recordBudget(memoriesKept, totalMemories, tokensUsed, tokenBudgetMax) {
         this.memoriesAfterBudget = memoriesKept;
         this.tokenBudgetUsed = tokensUsed;
@@ -108,6 +137,11 @@ export class MemoryMetrics {
             characterName: this.characterName,
             latencyMs: this.latencyMs,
             memoriesRetrieved: this._memories.length,
+            memoriesAfterFiltering: this.memoriesAfterFiltering,
+            memoriesDeduped: this.memoriesDeduped,
+            timeDecayApplied: this.timeDecayApplied,
+            memoriesCompressed: this.memoriesCompressed,
+            compressionRatio: this.compressionRatio,
             memoriesAfterBudget: this.memoriesAfterBudget,
             similarityMin,
             similarityMax,
