@@ -216,6 +216,90 @@ export function compressMemories(memories, queryText, maxChars = 200) {
     });
 }
 
+/**
+ * @typedef {Object} OptimizationStats
+ * @property {number} memoriesAfterFiltering - Count after similarity threshold.
+ * @property {number} memoriesDeduped - Count removed by dedup.
+ * @property {boolean} timeDecayApplied - Whether time-decay was applied.
+ * @property {number} memoriesCompressed - Count of memories that were shortened.
+ * @property {number|null} compressionRatio - Mean compressed/original length.
+ */
+
+/**
+ * @typedef {Object} OptimizationResult
+ * @property {MemoryItem[]} memories - The optimized memory set.
+ * @property {OptimizationStats} stats - Per-step statistics.
+ */
+
+/**
+ * Orchestrates all memory optimizations in sequence:
+ * filter -> deduplicate -> time-decay -> compress.
+ * Each step runs only if its flag is enabled.
+ *
+ * @param {MemoryItem[]} memories - Raw memories from recall().
+ * @param {Object} options - Optimization options.
+ * @param {number|null} options.similarityThreshold - Min score. Null to skip.
+ * @param {boolean} options.deduplication - Whether to deduplicate.
+ * @param {number|null} options.timeDecayDays - Half-life in days. Null to skip.
+ * @param {boolean} options.compression - Whether to compress long memories.
+ * @param {string} options.queryText - The query text.
+ * @param {(text: string) => Promise<number[]>} options.embeddingFn - Embedding function.
+ * @returns {Promise<OptimizationResult>}
+ */
+export async function optimizeMemories(memories, options) {
+    /** @type {OptimizationStats} */
+    const stats = {
+        memoriesAfterFiltering: memories.length,
+        memoriesDeduped: 0,
+        timeDecayApplied: false,
+        memoriesCompressed: 0,
+        compressionRatio: null,
+    };
+
+    let result = memories;
+
+    // 1. Similarity filtering
+    if (options.similarityThreshold !== null && options.similarityThreshold !== undefined) {
+        result = filterBySimilarity(result, options.similarityThreshold);
+        stats.memoriesAfterFiltering = result.length;
+    }
+
+    // 2. Deduplication
+    if (options.deduplication && result.length > 1) {
+        const beforeCount = result.length;
+        result = await deduplicate(result, options.embeddingFn);
+        stats.memoriesDeduped = beforeCount - result.length;
+    }
+
+    // 3. Time-decay
+    if (options.timeDecayDays !== null && options.timeDecayDays !== undefined) {
+        result = applyTimeDecay(result, options.timeDecayDays, options.queryText);
+        stats.timeDecayApplied = options.timeDecayDays !== null && !ATEMPORAL_PATTERN.test(options.queryText);
+    }
+
+    // 4. Compression
+    if (options.compression) {
+        const originalLengths = result.map(m => m.text.length);
+        result = compressMemories(result, options.queryText);
+        const compressedLengths = result.map(m => m.text.length);
+
+        let compressedCount = 0;
+        let totalRatio = 0;
+        for (let i = 0; i < result.length; i++) {
+            if (compressedLengths[i] < originalLengths[i]) {
+                compressedCount++;
+                totalRatio += compressedLengths[i] / originalLengths[i];
+            }
+        }
+        stats.memoriesCompressed = compressedCount;
+        stats.compressionRatio = compressedCount > 0
+            ? Math.round((totalRatio / compressedCount) * 10000) / 10000
+            : null;
+    }
+
+    return { memories: result, stats };
+}
+
 import fetch from 'node-fetch';
 
 /**

@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { filterBySimilarity, deduplicate, applyTimeDecay, compressMemories } from '../src/memory/memory-optimizer.js';
+import { filterBySimilarity, deduplicate, applyTimeDecay, compressMemories, optimizeMemories } from '../src/memory/memory-optimizer.js';
 
 describe('filterBySimilarity', () => {
     const memories = [
@@ -180,5 +180,71 @@ describe('compressMemories', () => {
         expect(result[0].score).toBe(0.9);
         expect(result[0].source).toBe('chat');
         expect(result[0].chatId).toBe('abc');
+    });
+});
+
+describe('optimizeMemories', () => {
+    const mockEmbedFn = async (text) => {
+        const vectors = {
+            'unique A': [1, 0, 0],
+            'unique B': [0, 1, 0],
+            'unique C': [0, 0, 1],
+        };
+        return vectors[text] || [0.5, 0.5, 0.5];
+    };
+
+    const now = Date.now();
+
+    test('passes through all memories when all flags are disabled', async () => {
+        const memories = [
+            { text: 'unique A', timestamp: now, score: 0.9 },
+            { text: 'unique B', timestamp: now, score: 0.5 },
+        ];
+        const result = await optimizeMemories(memories, {
+            similarityThreshold: null,
+            deduplication: false,
+            timeDecayDays: null,
+            compression: false,
+            queryText: 'test',
+            embeddingFn: mockEmbedFn,
+        });
+        expect(result.memories).toHaveLength(2);
+    });
+
+    test('returns optimization stats', async () => {
+        const memories = [
+            { text: 'unique A', timestamp: now, score: 0.9 },
+            { text: 'unique B', timestamp: now, score: 0.1 },
+        ];
+        const result = await optimizeMemories(memories, {
+            similarityThreshold: 0.3,
+            deduplication: false,
+            timeDecayDays: null,
+            compression: false,
+            queryText: 'test',
+            embeddingFn: mockEmbedFn,
+        });
+        expect(result.memories).toHaveLength(1);
+        expect(result.stats.memoriesAfterFiltering).toBe(1);
+    });
+
+    test('chains all optimizations in correct order', async () => {
+        const memories = [
+            { text: 'unique A', timestamp: now, score: 0.9 },
+            { text: 'unique B', timestamp: now, score: 0.5 },
+            { text: 'unique C', timestamp: now, score: 0.05 },
+        ];
+        const result = await optimizeMemories(memories, {
+            similarityThreshold: 0.1,
+            deduplication: true,
+            timeDecayDays: 30,
+            compression: false,
+            queryText: 'test',
+            embeddingFn: mockEmbedFn,
+        });
+        // C should be filtered (score 0.05 < threshold 0.1)
+        expect(result.memories).toHaveLength(2);
+        expect(result.stats.memoriesAfterFiltering).toBe(2);
+        expect(result.stats.timeDecayApplied).toBe(true);
     });
 });
