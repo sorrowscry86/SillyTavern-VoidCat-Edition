@@ -49,10 +49,10 @@ Docker provides the most reliable, isolated, and consistent environment. No syst
    ```bash
    docker logs -f sillytavern-vce
    ```
-   Look for: `Server is listening on http://0.0.0.0:8080`
+   Look for: `Server is listening on http://0.0.0.0:8000`
 
 4. **Access the web interface**:
-   Open your browser and go to: **`http://localhost:8080`**
+   Open your browser and go to: **`http://localhost:8000`**
 
    Login with:
    - **Username**: `admin`
@@ -104,10 +104,10 @@ For direct system-level installation without Docker.
 
 | Problem | Checklist | Solution |
 |:--------|:----------|:---------|
-| **Port 8080 already in use** | Is another service using 8080? | Change port in `docker/docker-compose.yml` line ~`ports: ["8080:8080"]` to `ports: ["8081:8080"]`, then visit `http://localhost:8081` |
+| **Port 8000 already in use** | Is another service using 8000? | Change port in `docker/docker-compose.yml` line ~`ports: ["8000:8000"]` to `ports: ["8001:8000"]`, then visit `http://localhost:8001` |
 | **Container exits immediately** | Check logs? | Run `docker logs sillytavern-vce` to see error. Common: insufficient storage or missing docker-compose file. |
 | **Slow embedding generation** | GPU available? | If you have NVIDIA GPU, modify `docker-compose.yml` to add `runtime: nvidia`. See [GPU acceleration guide](docs/vce/VCE_MASTER_PLAN.md). |
-| **Can't reach localhost:8080** | Using Docker Desktop on Windows? | Docker Desktop network may need WSL2. Check Docker settings. Alternatively, use `http://127.0.0.1:8080`. |
+| **Can't reach localhost:8000** | Using Docker Desktop on Windows? | Docker Desktop network may need WSL2. Check Docker settings. Alternatively, use `http://127.0.0.1:8000`. |
 | **Permission denied: docker** | Running Docker without sudo? | Add your user to docker group: `sudo usermod -aG docker $USER` (Linux only). |
 
 ### Manual Installation Issues

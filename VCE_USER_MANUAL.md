@@ -270,6 +270,8 @@ From the web interface:
 
 ## Configuration Reference
 
+> **Note:** The default `config.yaml` may have sparse settings (null or empty values for some optimization parameters). The system uses sensible defaults when values are not specified. If you want to explicitly control behavior, populate the values shown below.
+
 ### Full omniscience Settings with Comments
 
 ```yaml
@@ -669,9 +671,7 @@ du -sh data/
 
 ### Performance Tuning
 
-For advanced configuration and GPU acceleration, see:
-- [GPU Acceleration Setup](docs/vce/VCE_MASTER_PLAN.md#gpu-optimization)
-- [Memory Optimization Analysis](docs/vce/Memory_Prompt_Optimization_Analysis.md)
+For advanced configuration and GPU acceleration, see the [Roadmap & Architecture Guide](docs/vce/VCE_MASTER_PLAN.md).
 
 ---
 
