@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { filterBySimilarity, deduplicate, applyTimeDecay } from '../src/memory/memory-optimizer.js';
+import { filterBySimilarity, deduplicate, applyTimeDecay, compressMemories } from '../src/memory/memory-optimizer.js';
 
 describe('filterBySimilarity', () => {
     const memories = [
@@ -125,5 +125,60 @@ describe('applyTimeDecay', () => {
         ];
         const result = applyTimeDecay(memories, 30, 'what do you always remember');
         expect(result[0].text).toBe('old');
+    });
+});
+
+describe('compressMemories', () => {
+    test('does not compress memories under 200 chars', () => {
+        const memories = [
+            { text: 'Short memory about cats.', timestamp: 1000, score: 0.9 },
+        ];
+        const result = compressMemories(memories, 'cats');
+        expect(result[0].text).toBe('Short memory about cats.');
+    });
+
+    test('compresses long memories keeping query-relevant sentences', () => {
+        const longText = 'The weather was sunny and warm today. ' +
+            'We discussed the project roadmap in detail during the meeting. ' +
+            'The team agreed on the next milestones for the project. ' +
+            'Coffee was served at three o clock in the afternoon. ' +
+            'The sunset was beautiful from the office window.';
+        const memories = [{ text: longText, timestamp: 1000, score: 0.9 }];
+        const result = compressMemories(memories, 'project roadmap milestones');
+        // Compressed text should be shorter than original
+        expect(result[0].text.length).toBeLessThan(longText.length);
+        // Should keep project-related sentences
+        expect(result[0].text).toContain('project');
+    });
+
+    test('does not compress single-sentence memories even if long', () => {
+        const longSentence = 'A'.repeat(250);
+        const memories = [{ text: longSentence, timestamp: 1000, score: 0.9 }];
+        const result = compressMemories(memories, 'query');
+        expect(result[0].text).toBe(longSentence);
+    });
+
+    test('returns empty array for empty input', () => {
+        expect(compressMemories([], 'query')).toEqual([]);
+    });
+
+    test('preserves non-text fields', () => {
+        const longText = 'First sentence about dogs. ' +
+            'Second sentence about cats. ' +
+            'Third sentence about birds. ' +
+            'Fourth sentence about fish in the aquarium. ' +
+            'Fifth sentence about hamsters running on their wheels.';
+        const memories = [{
+            text: longText,
+            timestamp: 1000,
+            score: 0.9,
+            source: 'chat',
+            chatId: 'abc',
+        }];
+        const result = compressMemories(memories, 'dogs');
+        expect(result[0].timestamp).toBe(1000);
+        expect(result[0].score).toBe(0.9);
+        expect(result[0].source).toBe('chat');
+        expect(result[0].chatId).toBe('abc');
     });
 });
