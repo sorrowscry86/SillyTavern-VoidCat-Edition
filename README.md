@@ -22,11 +22,12 @@ Unlike standard frontends, **SillyTavern VCE** implements the **Omniscience** an
 
 ## 📖 Scriptorium (Documentation)
 
-The following guides are mandatory reading for all Operators:
+Start here based on your goal:
 
-* [**User Manual**](VCE_USER_MANUAL.md): Comprehensive guide to memory management and character state.
-* [**Quick Reference**](VCE_QUICK_REFERENCE.md): Command shortcuts and essential configuration.
-* [**Roadmap**](VCE_ROADMAP.md): The trajectory of our ascension.
+* **[🚀 Getting Started](VCE_GETTING_STARTED.md)**: Installation, system requirements, troubleshooting
+* **[📖 User Manual](VCE_USER_MANUAL.md)**: Complete feature guide, memory system, personality, configuration
+* **[⚡ Quick Reference](VCE_QUICK_REFERENCE.md)**: Command shortcuts, config snippet, quick troubleshooting
+* **[🗺️ Roadmap](docs/vce/VCE_MASTER_PLAN.md)**: Development timeline and future features
 
 ---
 
