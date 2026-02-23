@@ -55,6 +55,8 @@ import { getVertexAIAuth, getProjectIdFromServiceAccount } from '../google.js';
 import { MemoryService } from '../../memory/memory-service.js';
 import { PersonalityService } from '../../personality/personality-service.js';
 import { MemoryMetrics } from '../../memory/memory-metrics.js';
+import { expandQuery, optimizeMemories } from '../../memory/memory-optimizer.js';
+import { getTransformersVector } from '../../vectors/embedding.js';
 import { logger } from '../../logger.js';
 
 const API_OPENAI = 'https://api.openai.com/v1';
@@ -2056,15 +2058,13 @@ router.post('/generate', async function (request, response) {
 
                 // 1. Inject internal state into the prompt (skip if state is uninitialized)
                 if (state.mood !== 'Uninitialized') {
-                    const goalsText = state.goals.length > 0 ? state.goals.join(', ') : 'none currently';
-                    const statePrompt = `### YOUR INNER WORLD\nYou are currently feeling ${state.mood.toLowerCase()}. Your immediate priorities: ${goalsText}. What occupies your mind right now: "${state.current_thought}"\nEmotional undercurrents: ${JSON.stringify(state.emotions)}\n### END OF INNER WORLD\n\nLet this internal landscape color your words and actions naturally. Do not reference it directly.`;
+                    const anchorIntent = state.thought_anchors?.direct_intent || 'Awaiting directive.';
+                    const anchorSubtext = state.thought_anchors?.emotional_subtext || 'Neutral.';
+                    const anchorEnvironment = state.thought_anchors?.environmental_awareness || 'Aware.';
+
+                    const statePrompt = `### SOVEREIGN DIRECTIVE\nIntent: ${anchorIntent}\nSubtext: ${anchorSubtext}\nEnvironment: ${anchorEnvironment}\n\n(Advance the moment using these anchors as your absolute truth.)`;
                     systemMsg.content = `${statePrompt}\n\n${systemMsg.content}`;
 
-                    // 1b. Inject emotional modifiers (if enabled)
-                    const emotionalModifier = personalityService.getEmotionalModifier(state.emotions);
-                    if (emotionalModifier) {
-                        systemMsg.content = `${emotionalModifier}\n\n${systemMsg.content}`;
-                    }
                 }
 
                 // 2. Recall and inject memories (with token budget cap + metrics)
@@ -2121,21 +2121,55 @@ router.post('/generate', async function (request, response) {
                         })
                         : null;
 
+                    let searchQuery = lastMessage;
+
+                    if (featureFlags.query_expansion) {
+                        const fastModel = getConfigValue('omniscience.fast_model', '');
+                        const fastApiKey = getConfigValue('omniscience.fast_api_key', '');
+                        const fastApiUrl = getConfigValue('omniscience.fast_api_url', '');
+
+                        if (fastApiKey && fastModel) {
+                            const recentContext = request.body.messages.slice(Math.max(0, request.body.messages.length - 4));
+                            const expanded = await expandQuery(recentContext, {
+                                apiUrl: fastApiUrl,
+                                apiKey: fastApiKey,
+                                model: fastModel,
+                            });
+
+                            if (expanded) {
+                                searchQuery = expanded;
+                                logger.info(`[OMNISCIENCE] Expanded query: "${lastMessage}" -> "${searchQuery}"`);
+                            }
+                        }
+                    }
+
                     metrics?.startRecall();
-                    const memories = await memoryService.recall(lastMessage, recallCount, chat_id);
+                    const memories = await memoryService.recall(searchQuery, recallCount, chat_id);
                     metrics?.endRecall(memories);
 
-                    if (memories.length > 0) {
+                    // Apply 2.2B optimizations (each gated by its feature flag)
+                    const optimized = await optimizeMemories(memories, {
+                        similarityThreshold: featureFlags.similarity_threshold ?? null,
+                        deduplication: featureFlags.deduplication ?? featureFlags.cross_system_deduplication ?? false,
+                        timeDecayDays: featureFlags.time_decay_days ?? null,
+                        compression: featureFlags.compression ?? false,
+                        queryText: searchQuery,
+                        embeddingFn: getTransformersVector,
+                    });
+                    const optimizedMemories = optimized.memories;
+                    metrics?.recordOptimizations(optimized.stats);
+
+                    if (optimizedMemories.length > 0) {
                         // Apply token budget cap — estimate tokens as chars/4, keep highest-relevance first
                         let tokenBudget = maxMemoryTokens;
                         let tokensUsed = 0;
                         /** @type {string[]} */
                         const memoryLines = [];
-                        for (const m of memories) {
+                        for (const m of optimizedMemories) {
                             const line = `[Memory (${new Date(m.timestamp).toLocaleDateString()}): ${m.text}]`;
                             const estimatedTokens = Math.ceil(line.length / 4);
                             if (tokenBudget - estimatedTokens < 0 && memoryLines.length > 0) {
-                                logger.info(`[OMNISCIENCE] Token budget exhausted (${maxMemoryTokens}), truncated to ${memoryLines.length}/${memories.length} memories`);
+                                logger.info(`[OMNISCIENCE] Token budget exhausted (${maxMemoryTokens}), truncated to ${memoryLines.length}/${optimizedMemories.length} memories`);
                                 break;
                             }
                             tokenBudget -= estimatedTokens;
@@ -2143,7 +2177,7 @@ router.post('/generate', async function (request, response) {
                             memoryLines.push(line);
                         }
 
-                        metrics?.recordBudget(memoryLines.length, memories.length, tokensUsed, maxMemoryTokens);
+                        metrics?.recordBudget(memoryLines.length, optimizedMemories.length, tokensUsed, maxMemoryTokens);
 
                         const memoryContext = memoryLines.join('\n');
                         // Optimized: static instruction moved to one-line directive, reducing per-request overhead
@@ -2533,7 +2567,7 @@ router.post('/generate', async function (request, response) {
 
         // VOID-VCE: Post-Generation Hook for Personality Evolution & Memory
         if (fetchResponse.ok && !request.body.stream) {
-            const json = await fetchResponse.json();
+            const json = /** @type {any} */ (await fetchResponse.json());
 
             // Capture response text for memory/evolution
             const aiResponseText = json.choices?.[0]?.message?.content || '';
@@ -2546,7 +2580,6 @@ router.post('/generate', async function (request, response) {
                     { role: 'user', content: userMessageText },
                     { role: 'assistant', content: aiResponseText },
                 ];
-                /** @type {import('../../personality/personality-service.js').ApiConfig} */
                 const evolutionApiConfig = {
                     model: request.body.model || '',
                     apiKey: apiKey || '',
