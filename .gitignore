@@ -57,3 +57,37 @@ public/scripts/extensions/third-party
 yarn.lock
 *.code-workspace
 test-results/
+
+# ============ SECURITY: CREDENTIALS & CONFIG ============
+.gemini/
+.voidcat/dispatcher_log.json
+.env.local
+.env.*.local
+config.local.yaml
+secrets.local.json
+*.secret
+*.key
+*.pem
+
+# ============ SECURITY: API & TOKENS ============
+**/apikey
+**/api_key
+**/API_KEY
+**/*token*
+**/*credential*
+**/*.credentials.json
+
+# ============ VCE-SPECIFIC: DEVELOPMENT ============
+.agent/
+.claude/
+.repomixignore
+.specstory/
+SESSION_SUMMARY.md
+HANDOFF_NOTES.md
+analyze_*.py
+*_metrics.md
+/omniscience_metrics.jsonl
+
+# ============ IDE & WORKSPACE ============
+.vscode/settings.json
+.vscode/launch.json
