@@ -1,0 +1,20 @@
+services:
+  sillytavern:
+    build:
+      context: ..
+      args:
+        - VCE_VERSION=1.15.0-voidcat
+    container_name: sillytavern-vce
+    hostname: sillytavern-vce
+    image: voidcat/sillytavern-vce:latest
+    environment:
+      - NODE_ENV=production
+      - FORCE_COLOR=1
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/home/node/app/config
+      - ./data:/home/node/app/data
+      - ./plugins:/home/node/app/plugins
+      - ./extensions:/home/node/app/public/scripts/extensions/third-party
+    restart: unless-stopped
