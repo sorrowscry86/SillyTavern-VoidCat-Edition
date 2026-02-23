@@ -79,7 +79,7 @@ const settings = {
     // For chats
     enabled_chats: false,
     template: 'Past events:\n{{text}}',
-    depth: 2,
+    depth: 9,
     position: extension_prompt_types.IN_PROMPT,
     protect: 5,
     insert: 3,
@@ -103,7 +103,7 @@ const settings = {
     overlap_percent_db: 0,
     file_template_db: 'Related information:\n{{text}}',
     file_position_db: extension_prompt_types.IN_PROMPT,
-    file_depth_db: 4,
+    file_depth_db: 9,
     file_depth_role_db: extension_prompt_roles.SYSTEM,
 
     // For World Info
@@ -1401,8 +1401,8 @@ async function onViewStatsClick() {
     toastr.info(`Total hashes: <b>${totalHashes}</b><br>
     Unique hashes: <b>${uniqueHashes}</b><br><br>
     I'll mark collected messages with a green circle.`,
-    `Stats for chat ${escapeHtml(chatId)}`,
-    { timeOut: 10000, escapeHtml: false },
+        `Stats for chat ${escapeHtml(chatId)}`,
+        { timeOut: 10000, escapeHtml: false },
     );
 
     const chat = getContext().chat;

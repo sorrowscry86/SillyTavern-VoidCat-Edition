@@ -114,7 +114,7 @@ const defaultSettings = {
     position: extension_prompt_types.IN_PROMPT,
     role: extension_prompt_roles.SYSTEM,
     scan: false,
-    depth: 2,
+    depth: 8,
     promptWords: 200,
     promptMinWords: 25,
     promptMaxWords: 1000,

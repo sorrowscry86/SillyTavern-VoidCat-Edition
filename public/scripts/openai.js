@@ -42,6 +42,8 @@ import {
     promptManagerDefaultPromptOrders,
 } from './PromptManager.js';
 
+import { tagPromptLayers } from './vce/prompt-layer-separator.js';
+
 import { forceCharacterEditorTokenize, getCustomStoppingStrings, persona_description_positions, power_user } from './power-user.js';
 import { SECRET_KEYS, secret_state, writeSecret } from './secrets.js';
 
@@ -105,7 +107,7 @@ const default_wi_format = '{0}';
 const default_new_chat_prompt = '[Start a new Chat]';
 const default_new_group_chat_prompt = '[Start a new group chat. Group members: {{group}}]';
 const default_new_example_chat_prompt = '[Example Chat]';
-const default_continue_nudge_prompt = '[Continue your last message without repeating its original content.]';
+const default_continue_nudge_prompt = '[Continue your last message. Prioritize narrative progression — introduce a new element, action, or shift in emotional subtext. Build upon what came before.]';
 const default_bias = 'Default (none)';
 const default_personality_format = '{{personality}}';
 const default_scenario_format = '{{scenario}}';
@@ -1099,13 +1101,15 @@ async function populateChatCompletion(prompts, chatCompletion, { bias, quietProm
     };
 
     chatCompletion.reserveBudget(3); // every reply is primed with <|start|>assistant<|message|>
-    // Character and world information
+    // Layer 0: Administrative directives (structural, not personality)
     await addToChatCompletion('worldInfoBefore');
     await addToChatCompletion('main');
     await addToChatCompletion('worldInfoAfter');
+
+    // Layer 1: Persona — injected LAST so character identity is the dominant voice
+    await addToChatCompletion('scenario');
     await addToChatCompletion('charDescription');
     await addToChatCompletion('charPersonality');
-    await addToChatCompletion('scenario');
     await addToChatCompletion('personaDescription');
 
     // Collection of control prompts that will always be positioned last
@@ -1359,6 +1363,9 @@ async function preparePromptsForChatCompletion({ scenario, charPersonality, name
 
     // This is the prompt order defined by the user
     const prompts = promptManager.getPromptCollection(type);
+
+    // VCE: Tag prompt layers before merging (admin vs persona classification)
+    tagPromptLayers(systemPrompts);
 
     // Merge system prompts with prompt manager prompts
     systemPrompts.forEach(prompt => {

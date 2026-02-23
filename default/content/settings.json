@@ -593,7 +593,7 @@
         "new_chat_prompt": "[Start a new Chat]",
         "new_group_chat_prompt": "[Start a new group chat. Group members: {{group}}]",
         "new_example_chat_prompt": "[Example Chat]",
-        "continue_nudge_prompt": "[Continue your last message without repeating its original content.]",
+        "continue_nudge_prompt": "[Drive the narrative forward seamlessly without retracing previous steps.]",
         "bias_preset_selected": "Default (none)",
         "bias_presets": {
             "Default (none)": [],
