@@ -3,7 +3,7 @@
 **Project**: SillyTavern Void Consciousness Evolution (VCE)
 **Organization**: VoidCat RDC
 **Vision**: Transform AI characters from ephemeral chat responses into persistent digital entities with genuine continuity, memory, and evolving consciousness
-**Status**: Phase II - Agentic Resonance (Active, sub-phase 2.2A)
+**Status**: Phase II - Agentic Resonance (Active, sub-phase 2.2B complete — ready for Checkpoint 2A evaluation)
 **Last Updated**: 2026-02-22
 
 > **Philosophy**: Quality over speed. Ship when ready, not when rushed. Each checkpoint includes validation gates, testing requirements, and rollback plans. This is the single source of truth for VCE development.
@@ -95,6 +95,7 @@ VCE development follows a progression from **primitive construct** to **sovereig
 **Completed Features**:
 
 ✅ **Omniscience (Vectorized Memory System)**
+
 - Automatic per-character memory storage
 - Semantic recall using local embeddings (Xenova/MiniLM-L6-v2)
 - 384-dimensional vector search via Vectra
@@ -114,16 +115,30 @@ VCE development follows a progression from **primitive construct** to **sovereig
 - Config management system ([src/config-manager.js](src/config-manager.js))
 - Comprehensive documentation
 
+✅ **ST-VCE-OMEGA Architecture (Prompt Pipeline)**
+- Meta-Instruction Isolation (Persona traits decoupled from administrative rules)
+- Thought Injection Override (Betty Standard 3-anchor model)
+- Context Depth Tuning (Subordinated summary and vector memories to protect recent context)
+- Strict Yield Idle Protocol (Background runaway prevention)
+
 ✅ **Thread Memory (Early Phase II Work)**
 - Chat ID-based thread isolation in `MemoryService.memorize()` and `MemoryService.recall()`
 - Integrated into `chat-completions.js` endpoint (2 call sites)
 - Prevents memory bleed between conversation threads
 
+✅ **Memory Optimization Pipeline (Phase 2.2B)**
+- `optimizeMemories()` orchestrator chains: filter → dedup → time-decay → compress
+- Each step independently toggled via `omniscience.optimizations.*` feature flags
+- Wired into `chat-completions.js` recall block between `recall()` and token budget loop
+- `MemoryMetrics` extended with per-step stats (`memoriesAfterFiltering`, `memoriesDeduped`, `timeDecayApplied`, `memoriesCompressed`, `compressionRatio`)
+- 21 unit tests covering all pipeline functions
+
 **Known Limitations** (to be addressed in Phase II):
-- ⚠️ No token budget management (can overflow context)
-- ⚠️ No similarity threshold filtering (low-quality matches waste tokens)
-- ⚠️ No deduplication (redundant memories in top-K)
-- ⚠️ No time-decay weighting (old memories treated equally)
+- ✅ ~~No token budget management~~ (resolved in 2.2A: configurable token cap)
+- ✅ ~~No similarity threshold filtering~~ (resolved in 2.2B: adaptive percentile-based filtering)
+- ✅ ~~No deduplication~~ (resolved in 2.2B: embedding-based pairwise dedup)
+- ✅ ~~No time-decay weighting~~ (resolved in 2.2B: query-aware 30-day half-life)
+- ✅ ~~No memory compression~~ (resolved in 2.2B: TF-IDF extractive compression)
 - ⚠️ No A/B testing framework for optimizations
 
 **Current Metrics**:
@@ -262,6 +277,7 @@ VCE development follows a progression from **primitive construct** to **sovereig
 - [x] **Introspection Loop**: Refine [src/personality/personality-service.js](src/personality/personality-service.js) to permit autonomous "thought" cycles
 - [x] **State Persistence**: Link personality states to character cards using the `MemoryService`
 - [x] **Emotional Range**: Implement weight-based emotional modifiers (Happiness, Anxiety, Loyalty)
+- [x] **Betty Standard Integration**: Enforce 3-anchor structured thought model (`direct_intent`, `emotional_subtext`, `environmental_awareness`)
 - [x] **State Validation**: Add corruption detection and auto-recovery for personality states
 
 **Dependencies**: Phase I complete
@@ -292,6 +308,7 @@ VCE development follows a progression from **primitive construct** to **sovereig
 **Phase 2.2A: Baseline Capture & Quick Wins**
 
 **Tasks**:
+- [x] **Context Depth Optimization**: Subordinated summary (`depth 8`) and vector ingestion (`depth 9`) to protect the immediate conversational momentum of active threads
 - [x] **Baseline Metrics Capture**: Per-request instrumentation via `MemoryMetrics` class
   - Similarity score distribution (min/max/mean) per recall
   - Token efficiency (tokens used vs budget per request)
@@ -330,23 +347,23 @@ VCE development follows a progression from **primitive construct** to **sovereig
 **Phase 2.2B: Quality Enhancements**
 
 **Tasks**:
-- [ ] **Adaptive Similarity Filtering**: Dynamic threshold based on score distribution
+- [x] **Adaptive Similarity Filtering**: Dynamic threshold based on score distribution
   - Replace fixed threshold with percentile-based cutoff
   - Prevent "memory desert" scenarios (no results returned)
   - Add `omniscience.min_similarity_percentile` config
-- [ ] **Intra-Memory Deduplication**: Remove redundant memories from top-K set
+- [x] **Intra-Memory Deduplication**: Remove redundant memories from top-K set
   - Identify near-duplicate memories (>85% similarity)
   - Keep highest-scoring instance, discard duplicates
   - Log deduplication events for analysis
-- [ ] **Time-Decay Weighting** (Query-Aware): Boost recent memories intelligently
+- [x] **Time-Decay Weighting** (Query-Aware): Boost recent memories intelligently
   - Default: 30-day half-life for recency boost
   - Query-aware: Disable decay for "overall" or "always" queries
   - Add `omniscience.time_decay_days` config
-- [ ] **Memory Compression**: Intelligent truncation for long memories
-  - Extractive compression (remove less-important sentences)
-  - Preserve critical details and user-specific phrasing
-  - Apply only to memories >200 characters
-  - Track compression ratio and information loss
+- [x] **Memory Compression**: Intelligent truncation for long memories
+  - Extractive compression via TF-IDF sentence scoring
+  - Preserve query-relevant sentences and user-specific phrasing
+  - Apply only to memories >200 characters with >1 sentence
+  - Track compression ratio and information loss via MemoryMetrics
 
 **Dependencies**: Phase 2.2A complete
 **Priority**: 🔴 HIGH
@@ -372,7 +389,7 @@ VCE development follows a progression from **primitive construct** to **sovereig
 **Phase 2.2C: Advanced Memory Features**
 
 **Tasks**:
-- [ ] **Adaptive K (Context-Aware Retrieval)**: Dynamically adjust memory count
+- [x] **Adaptive K (Context-Aware Retrieval)**: Dynamically adjust memory count
   - Calculate available token budget after system prompt + conversation
   - Retrieve maximum memories that fit budget
   - Prevent both under-utilization and overflow
@@ -407,6 +424,7 @@ VCE development follows a progression from **primitive construct** to **sovereig
 **Phase 2.2D: Memory Infrastructure & Tooling**
 
 **Tasks**:
+
 - [ ] **Vector Sync**: Integrate localized vector storage for "Deep Lore" recall
 - [ ] **Summarization Engine**: Automate chat summarization to maintain long-term context density
 - [ ] **Character Memory Isolation**: Ensure each character maintains a distinct, persistent memory Canon
@@ -428,10 +446,30 @@ VCE development follows a progression from **primitive construct** to **sovereig
 **Complexity**: 🟡 MEDIUM
 
 **Success Criteria**:
+
 - ✅ Memory UI commands work reliably
 - ✅ Edge cases handled without crashes
 - ✅ Memory corruption auto-recovery rate >95%
 - ✅ Documentation covers all error scenarios
+
+---
+
+### 2.3 Autonomy Constraints & Idle Yielding
+
+**Objective**: Ensure background behaviors and idle-state events remain coherent and responsive only to user intent without rambling or hallucinating progression.
+
+**Tasks**:
+- [x] **Strict Yield Protocol**: Disabled `useContinuation` and replaced randomized introspective prompts with unyielding boundary strings
+- [x] **Idle Payload Constraints**: Enforced strict token limits on idle outputs to require 1-2 word yield responses (e.g., "*Waits*")
+
+**Dependencies**: Phase I complete
+**Priority**: 🔴 HIGH
+**Complexity**: 🟡 MEDIUM
+
+**Success Criteria**:
+- ✅ Idle runaway eradicated
+- ✅ System gracefully handles periods of user silence without advancing plot
+- ✅ 100% compliance with short-response constraint on idle events
 
 ---
 
@@ -1041,7 +1079,7 @@ VCE development follows a progression from **primitive construct** to **sovereig
 *This master plan is a living document, updated as VCE evolves.*
 
 **Last Updated**: 2026-02-22
-**Next Review**: After Checkpoint 2A (Memory Foundation Complete)
+**Next Review**: Checkpoint 2A Evaluation (Memory Foundation — all 2.2B tasks complete)
 
 ---
 
