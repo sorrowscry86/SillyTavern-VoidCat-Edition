@@ -16,24 +16,13 @@ jobs:
     name: ⏳ Mark Issues/PRs without Activity
     runs-on: ubuntu-latest
     if: always()
-
     steps:
-      - name: Mint App Token
-        id: app
-        # Create a GitHub App token
-        # https://github.com/marketplace/actions/create-github-app-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.ST_BOT_APP_ID }}
-          private-key: ${{ secrets.ST_BOT_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
       - name: Mark Issues/PRs without Activity
         # Close Stale Issues and PRs
         # https://github.com/marketplace/actions/close-stale-issues
         uses: actions/stale@v9.1.0
         with:
-          repo-token: ${{ steps.app.outputs.token }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
           days-before-stale: 183
           days-before-close: 7
           operations-per-run: 30
@@ -61,24 +50,13 @@ jobs:
     needs: [mark-inactivity]
     runs-on: ubuntu-latest
     if: always()
-
     steps:
-      - name: Mint App Token
-        id: app
-        # Create a GitHub App token
-        # https://github.com/marketplace/actions/create-github-app-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.ST_BOT_APP_ID }}
-          private-key: ${{ secrets.ST_BOT_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
       - name: Mark Issues/PRs Awaiting User Response
         # Close Stale Issues and PRs
         # https://github.com/marketplace/actions/close-stale-issues
         uses: actions/stale@v9.1.0
         with:
-          repo-token: ${{ steps.app.outputs.token }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
           days-before-stale: 7
           days-before-close: 7
           operations-per-run: 30
@@ -99,24 +77,13 @@ jobs:
     needs: [mark-inactivity, await-user-response]
     runs-on: ubuntu-latest
     if: always()
-
     steps:
-      - name: Mint App Token
-        id: app
-        # Create a GitHub App token
-        # https://github.com/marketplace/actions/create-github-app-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ vars.ST_BOT_APP_ID }}
-          private-key: ${{ secrets.ST_BOT_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-
       - name: Mark Issues with Alternative Exists
         # Close Stale Issues and PRs
         # https://github.com/marketplace/actions/close-stale-issues
         uses: actions/stale@v9.1.0
         with:
-          repo-token: ${{ steps.app.outputs.token }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
           days-before-stale: 7
           days-before-close: 7
           operations-per-run: 30
